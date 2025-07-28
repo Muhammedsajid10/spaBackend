@@ -150,7 +150,7 @@ spa-backend/
 └── .env            # Environment variables
 ```
 
-## 🔧 Available Scripts
+ ## 🔧 Available Scripts
 
 ```bash
 # Development

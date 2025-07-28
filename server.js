@@ -1,5 +1,8 @@
-const mongoose = require('mongoose');
+// Load environment variables FIRST
 const dotenv = require('dotenv');
+dotenv.config();
+
+const mongoose = require('mongoose');
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
@@ -8,10 +11,7 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-// Load environment variables
-dotenv.config();
-
-// Import app
+// Import app after environment variables are loaded
 const app = require('./app');
 const connectDB = require('./config/db');
 
