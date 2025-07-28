@@ -387,7 +387,16 @@ const getUserBookings = async (req, res) => {
     const userId = req.user._id;
     const bookings = await Booking.find({ client: userId })
       .populate('services.service', 'name price duration')
-      .populate('services.employee', 'user position')
+      .populate({
+        path: 'services.employee',
+        model: 'Employee',
+        select: 'user position employeeId',
+        populate: {
+          path: 'user',
+          model: 'User',
+          select: 'firstName lastName email'
+        }
+      })
       .sort({ appointmentDate: -1 });
 
     res.json({
