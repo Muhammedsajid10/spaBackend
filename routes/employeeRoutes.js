@@ -26,6 +26,7 @@ router.get('/my-schedule', isEmployeeOnly, canViewOwnAppointments, employeeContr
 router.get('/my-attendance', isEmployeeOnly, canMarkOwnAttendance, employeeController.getMyAttendance);
 router.post('/check-in', isEmployeeOnly, canMarkOwnAttendance, logUserAction('employee_checkin'), employeeController.checkIn);
 router.post('/check-out', isEmployeeOnly, canMarkOwnAttendance, logUserAction('employee_checkout'), employeeController.checkOut);
+router.post('/mark-absent', isEmployeeOnly, canMarkOwnAttendance, logUserAction('employee_mark_absent'), employeeController.markAbsent);
 
 // Ratings & Feedback - Employee can only view their own ratings
 router.get('/my-ratings', isEmployeeOnly, canViewOwnRatings, employeeController.getMyRatings);

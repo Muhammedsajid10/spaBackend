@@ -631,11 +631,29 @@ const getMyAttendance = catchAsync(async (req, res, next) => {
   .sort({ date: -1 })
   .limit(30);
 
+  // Transform attendance data to match frontend expectations
+  const transformedAttendance = attendance.map(record => ({
+    _id: record._id,
+    date: record.date,
+    checkIn: record.clockIn?.time || null,
+    checkOut: record.clockOut?.time || null,
+    actualHours: record.actualHours || 0,
+    status: record.status,
+    isLate: record.isLate,
+    lateMinutes: record.lateMinutes,
+    isEarlyLeave: record.isEarlyLeave,
+    earlyLeaveMinutes: record.earlyLeaveMinutes,
+    isAbsent: record.status === 'absent',
+    absentReason: record.leaveReason || null,
+    leaveType: record.leaveType || null,
+    hoursWorked: record.actualHours || 0
+  }));
+
   res.status(200).json({
     success: true,
-    results: attendance.length,
+    results: transformedAttendance.length,
     data: {
-      attendance
+      attendance: transformedAttendance
     }
   });
 });
@@ -652,8 +670,9 @@ const checkIn = catchAsync(async (req, res, next) => {
     });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Use UTC date to avoid timezone issues
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
   // Check if already checked in today
   const existingAttendance = await Attendance.findOne({
@@ -661,7 +680,7 @@ const checkIn = catchAsync(async (req, res, next) => {
     date: today
   });
 
-  if (existingAttendance && existingAttendance.checkIn) {
+  if (existingAttendance && existingAttendance.clockIn && existingAttendance.clockIn.time) {
     return res.status(400).json({
       success: false,
       message: 'Already checked in today'
@@ -670,14 +689,20 @@ const checkIn = catchAsync(async (req, res, next) => {
 
   if (existingAttendance) {
     // Update existing record
-    existingAttendance.checkIn = new Date();
+    existingAttendance.clockIn = {
+      time: new Date(),
+      method: 'mobile-app'
+    };
     await existingAttendance.save();
   } else {
     // Create new attendance record
     await Attendance.create({
       employee: employee._id,
       date: today,
-      checkIn: new Date()
+      clockIn: {
+        time: new Date(),
+        method: 'mobile-app'
+      }
     });
   }
 
@@ -702,8 +727,9 @@ const checkOut = catchAsync(async (req, res, next) => {
     });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Use UTC date to avoid timezone issues
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
   // Find today's attendance record
   const attendance = await Attendance.findOne({
@@ -711,14 +737,14 @@ const checkOut = catchAsync(async (req, res, next) => {
     date: today
   });
 
-  if (!attendance || !attendance.checkIn) {
+  if (!attendance || !attendance.clockIn || !attendance.clockIn.time) {
     return res.status(400).json({
       success: false,
       message: 'No check-in record found for today'
     });
   }
 
-  if (attendance.checkOut) {
+  if (attendance.clockOut && attendance.clockOut.time) {
     return res.status(400).json({
       success: false,
       message: 'Already checked out today'
@@ -727,10 +753,13 @@ const checkOut = catchAsync(async (req, res, next) => {
 
   // Calculate working hours
   const checkOutTime = new Date();
-  const workingHours = (checkOutTime - attendance.checkIn) / (1000 * 60 * 60);
+  const workingHours = (checkOutTime - attendance.clockIn.time) / (1000 * 60 * 60);
 
-  attendance.checkOut = checkOutTime;
-  attendance.workingHours = Math.round(workingHours * 100) / 100;
+  attendance.clockOut = {
+    time: checkOutTime,
+    method: 'mobile-app'
+  };
+  attendance.actualHours = Math.round(workingHours * 100) / 100;
   await attendance.save();
 
   res.status(200).json({
@@ -738,7 +767,68 @@ const checkOut = catchAsync(async (req, res, next) => {
     message: 'Check-out successful',
     data: {
       checkOutTime,
-      workingHours: attendance.workingHours
+      workingHours: attendance.actualHours
+    }
+  });
+});
+
+// Mark as absent
+const markAbsent = catchAsync(async (req, res, next) => {
+  const { reason, leaveType } = req.body;
+  
+  // Find employee record for the logged-in user
+  const employee = await Employee.findOne({ user: req.user._id });
+  
+  if (!employee) {
+    return res.status(404).json({
+      success: false,
+      message: 'Employee record not found'
+    });
+  }
+
+  // Use UTC date to avoid timezone issues
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  // Check if already has attendance record for today
+  let attendance = await Attendance.findOne({
+    employee: employee._id,
+    date: today
+  });
+
+  if (attendance) {
+    // Check if already checked in - can't mark absent if already present
+    if (attendance.clockIn && attendance.clockIn.time) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot mark as absent after checking in'
+      });
+    }
+    
+    // Update existing record to absent
+    attendance.status = 'absent';
+    attendance.leaveReason = reason || 'Employee marked as absent';
+    attendance.leaveType = leaveType || 'personal';
+    await attendance.save();
+  } else {
+    // Create new attendance record with absent status
+    attendance = await Attendance.create({
+      employee: employee._id,
+      date: today,
+      status: 'absent',
+      leaveReason: reason || 'Employee marked as absent',
+      leaveType: leaveType || 'personal'
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'Marked as absent successfully',
+    data: {
+      date: today,
+      status: 'absent',
+      reason: attendance.leaveReason,
+      leaveType: attendance.leaveType
     }
   });
 });
@@ -963,6 +1053,7 @@ module.exports = {
   checkIn,
   checkOut,
   getMyRatings,
-  getMyPerformance
+  getMyPerformance,
+  markAbsent
 };
 
