@@ -13,18 +13,9 @@ const serviceSchema = new mongoose.Schema({
     maxlength: [1000, 'Description cannot exceed 1000 characters']
   },
   category: {
-    type: String,
-    required: [true, 'Service category is required'],
-    enum: [
-      'Facial',
-      'Massage',
-      'Body Treatment',
-      'Nail Care',
-      'Hair Care',
-      'Aromatherapy',
-      'Wellness',
-      'Package'
-    ]
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    required: [true, 'Service category is required']
   },
   duration: {
     type: Number,

@@ -43,7 +43,7 @@ const employeeSchema = new mongoose.Schema({
   },
   salary: {
     type: Number,
-    required: [true, 'Salary is required'],
+    // required: [true, 'Salary is required'],
     min: [0, 'Salary cannot be negative']
   },
   commissionRate: {

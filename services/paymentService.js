@@ -1,6 +1,6 @@
 const Payment = require('../models/Payment');
 const Booking = require('../models/Booking');
-const NetworkInternationalService = require('./networkInternationalService');
+const StripeService = require('./stripeService');
 
 // Base Payment Gateway Class
 class BasePaymentGateway {
@@ -25,11 +25,11 @@ class BasePaymentGateway {
   }
 }
 
-// Network International Payment Gateway Implementation
-class NetworkInternationalGateway extends BasePaymentGateway {
+// Stripe Payment Gateway Implementation
+class StripeGateway extends BasePaymentGateway {
   constructor(config) {
     super(config);
-    this.networkService = new NetworkInternationalService(config);
+    this.stripeService = new StripeService(config);
   }
 
   async createPaymentIntent(amount, currency, metadata) {
@@ -47,24 +47,24 @@ class NetworkInternationalGateway extends BasePaymentGateway {
         notifyUrl: metadata.notifyUrl
       };
 
-      const result = await this.networkService.createOrder(orderData);
+      const result = await this.stripeService.createOrder(orderData);
 
       return {
-        paymentIntentId: result.orderId,
-        clientSecret: null,
+        paymentIntentId: result.paymentIntentId,
+        clientSecret: result.clientSecret,
         status: result.status,
         paymentUrl: result.paymentUrl,
         transactionId: result.transactionId
       };
     } catch (error) {
-      throw new Error(`Network International payment creation failed: ${error.message}`);
+      throw new Error(`Stripe payment creation failed: ${error.message}`);
     }
   }
 
-  async confirmPayment(orderId) {
+  async confirmPayment(paymentIntentId) {
     try {
-      // For Network International, we need to verify the payment status
-      const result = await this.networkService.verifyPayment(orderId);
+      // For Stripe, we verify the payment status
+      const result = await this.stripeService.verifyPayment(paymentIntentId);
       
       return {
         status: result.status,
@@ -73,13 +73,13 @@ class NetworkInternationalGateway extends BasePaymentGateway {
         transactionId: result.transactionId
       };
     } catch (error) {
-      throw new Error(`Network International payment confirmation failed: ${error.message}`);
+      throw new Error(`Stripe payment confirmation failed: ${error.message}`);
     }
   }
 
-  async refundPayment(orderId, amount) {
+  async refundPayment(paymentIntentId, amount) {
     try {
-      const result = await this.networkService.refundPayment(orderId, amount);
+      const result = await this.stripeService.refundPayment(paymentIntentId, null, amount);
       
       return {
         refundId: result.refundId,
@@ -87,16 +87,16 @@ class NetworkInternationalGateway extends BasePaymentGateway {
         amount: result.refundAmount
       };
     } catch (error) {
-      throw new Error(`Network International refund failed: ${error.message}`);
+      throw new Error(`Stripe refund failed: ${error.message}`);
     }
   }
 
-  async getPaymentStatus(orderId) {
+  async getPaymentStatus(paymentIntentId) {
     try {
-      const result = await this.networkService.verifyPayment(orderId);
+      const result = await this.stripeService.verifyPayment(paymentIntentId);
       return result.status;
     } catch (error) {
-      throw new Error(`Network International status check failed: ${error.message}`);
+      throw new Error(`Stripe status check failed: ${error.message}`);
     }
   }
 }
@@ -157,27 +157,29 @@ class PaymentService {
   }
 
   initializeGateways() {
-    // Initialize Network International
-    if (process.env.NETWORK_INTERNATIONAL_MERCHANT_ID && 
-        process.env.NETWORK_INTERNATIONAL_API_KEY && 
-        process.env.NETWORK_INTERNATIONAL_SECRET_KEY &&
-        process.env.NETWORK_INTERNATIONAL_MERCHANT_ID !== 'your_merchant_id') {
-      this.gateways.set('network_international', new NetworkInternationalGateway({
-        merchantId: process.env.NETWORK_INTERNATIONAL_MERCHANT_ID,
-        apiKey: process.env.NETWORK_INTERNATIONAL_API_KEY,
-        secretKey: process.env.NETWORK_INTERNATIONAL_SECRET_KEY,
-        environment: process.env.NETWORK_INTERNATIONAL_ENVIRONMENT || 'test',
-        currency: process.env.NETWORK_INTERNATIONAL_CURRENCY || 'AED'
+    // Initialize Stripe
+    if (process.env.STRIPE_SECRET_KEY && 
+        process.env.STRIPE_PUBLISHABLE_KEY &&
+        process.env.STRIPE_SECRET_KEY !== 'sk_test_your_secret_key') {
+      this.gateways.set('stripe', new StripeGateway({
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+        secretKey: process.env.STRIPE_SECRET_KEY,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+        environment: process.env.STRIPE_ENVIRONMENT || 'test',
+        currency: process.env.STRIPE_CURRENCY || 'AED'
       }));
-      console.log('Network International gateway initialized with real credentials');
+      console.log('Stripe gateway initialized with real credentials');
     } else {
       // Use mock gateway for testing
-      this.gateways.set('network_international', new MockPaymentGateway({
+      this.gateways.set('stripe', new MockPaymentGateway({
         environment: 'test',
         currency: 'AED'
       }));
-      console.log('Mock payment gateway initialized for testing (Network International credentials not configured)');
+      console.log('Mock payment gateway initialized for testing (Stripe credentials not configured)');
     }
+    
+    // Keep network_international for backward compatibility, but redirect to Stripe
+    this.gateways.set('network_international', this.gateways.get('stripe'));
   }
 
   getGateway(gatewayName) {
@@ -191,7 +193,7 @@ class PaymentService {
   async createPayment(bookingId, userId, amount, currency, paymentMethod, gatewayName) {
     try {
       // Validate booking
-      const booking = await Booking.findById(bookingId).populate('user', 'firstName lastName email phone');
+      const booking = await Booking.findById(bookingId).populate('client', 'firstName lastName email phone');
       if (!booking) {
         throw new Error('Booking not found');
       }
@@ -216,9 +218,9 @@ class PaymentService {
         currency,
         {
           orderId: `ORDER_${bookingId}_${Date.now()}`,
-          customerEmail: booking.user.email,
-          customerName: `${booking.user.firstName} ${booking.user.lastName}`,
-          customerPhone: booking.user.phone,
+          customerEmail: booking.client.email,
+          customerName: `${booking.client.firstName} ${booking.client.lastName}`,
+          customerPhone: booking.client.phone,
           description: `SPA Booking - ${booking.services[0]?.service?.name || 'Service'}`,
           returnUrl: `${process.env.FRONTEND_URL}/payment/success?paymentId=${payment._id}`,
           cancelUrl: `${process.env.FRONTEND_URL}/payment/cancel?paymentId=${payment._id}`,
@@ -363,20 +365,20 @@ class PaymentService {
     }
   }
 
-  // Process Network International webhook
-  async processNetworkInternationalWebhook(webhookData) {
+  // Process Stripe webhook
+  async processStripeWebhook(webhookData, signature) {
     try {
-      const networkService = new NetworkInternationalService({
-        merchantId: process.env.NETWORK_INTERNATIONAL_MERCHANT_ID,
-        apiKey: process.env.NETWORK_INTERNATIONAL_API_KEY,
-        secretKey: process.env.NETWORK_INTERNATIONAL_SECRET_KEY,
-        environment: process.env.NETWORK_INTERNATIONAL_ENVIRONMENT || 'test'
+      const stripeService = new StripeService({
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+        secretKey: process.env.STRIPE_SECRET_KEY,
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+        environment: process.env.STRIPE_ENVIRONMENT || 'test'
       });
 
-      const result = networkService.processWebhook(webhookData);
+      const result = await stripeService.processWebhook(webhookData, signature);
 
       // Find and update payment
-      const payment = await Payment.findOne({ paymentIntent: result.orderId });
+      const payment = await Payment.findOne({ paymentIntent: result.transactionId });
       if (payment) {
         payment.status = result.status === 'SUCCESS' ? 'completed' : 'failed';
         payment.gatewayTransactionId = result.transactionId;
@@ -394,8 +396,14 @@ class PaymentService {
 
       return result;
     } catch (error) {
-      throw new Error(`Webhook processing failed: ${error.message}`);
+      throw new Error(`Stripe webhook processing failed: ${error.message}`);
     }
+  }
+
+  // Keep legacy Network International webhook method for backward compatibility
+  async processNetworkInternationalWebhook(webhookData) {
+    // Redirect to Stripe webhook processing for backward compatibility
+    return this.processStripeWebhook(webhookData);
   }
 }
 

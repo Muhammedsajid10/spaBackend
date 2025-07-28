@@ -14,6 +14,8 @@ router.use(protect);
 // Payment creation and management
 router.post('/create', paymentController.createPayment);
 router.post('/confirm', paymentController.confirmPayment);
+router.post('/confirm/stripe', paymentController.confirmStripePayment);
+router.post('/send-confirmation', paymentController.sendConfirmationEmail);
 router.get('/status/:paymentId', paymentController.getPaymentStatus);
 router.post('/refund/:paymentId', paymentController.refundPayment);
 router.get('/history', paymentController.getPaymentHistory);
@@ -24,6 +26,7 @@ router.get('/success', paymentController.paymentSuccess);
 router.get('/cancel', paymentController.paymentCancel);
 
 // Webhook endpoints (no authentication required)
+router.post('/webhook/stripe', paymentController.handleStripeWebhook);
 router.post('/webhook/network_international', paymentController.handleNetworkInternationalWebhook);
 
 // Admin: get all payments

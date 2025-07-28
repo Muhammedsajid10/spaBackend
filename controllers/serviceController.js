@@ -81,7 +81,7 @@ const getAllServices = catchAsync(async (req, res, next) => {
     filter.isActive = true;
   }
 
-  const features = new APIFeatures(Service.find(filter), req.query)
+  const features = new APIFeatures(Service.find(filter).populate('category', 'name displayName'), req.query)
     .filter()
     .sort()
     .limitFields()
@@ -101,6 +101,7 @@ const getAllServices = catchAsync(async (req, res, next) => {
 // Get single service
 const getService = catchAsync(async (req, res, next) => {
   const service = await Service.findById(req.params.id)
+    .populate('category', 'name displayName')
     .populate('availableEmployees', 'employeeId user')
     .populate('availableEmployees.user', 'firstName lastName');
 
@@ -196,7 +197,7 @@ const getServicesByCategory = catchAsync(async (req, res, next) => {
     filter.isActive = true;
   }
 
-  const services = await Service.find(filter).sort('name');
+  const services = await Service.find(filter).populate('category', 'name displayName').sort('name');
 
   res.status(200).json({
     success: true,
@@ -217,6 +218,7 @@ const getPopularServices = catchAsync(async (req, res, next) => {
   }
 
   const services = await Service.find(filter)
+    .populate('category', 'name displayName')
     .sort('-ratings.average')
     .limit(10);
 
@@ -244,7 +246,6 @@ const searchServices = catchAsync(async (req, res, next) => {
     $or: [
       { name: { $regex: q, $options: 'i' } },
       { description: { $regex: q, $options: 'i' } },
-      { category: { $regex: q, $options: 'i' } },
       { tags: { $in: [new RegExp(q, 'i')] } }
     ]
   };
@@ -254,7 +255,7 @@ const searchServices = catchAsync(async (req, res, next) => {
     filter.isActive = true;
   }
 
-  const services = await Service.find(filter).limit(20);
+  const services = await Service.find(filter).populate('category', 'name displayName').limit(20);
 
   res.status(200).json({
     success: true,
@@ -399,13 +400,18 @@ const updateServiceRatings = catchAsync(async (req, res, next) => {
 
 // Get service categories
 const getServiceCategories = catchAsync(async (req, res, next) => {
-  const categories = await Service.distinct('category', { isActive: true });
+  const Category = require('../models/Category');
+  const categories = await Category.find().sort('displayName');
 
   res.status(200).json({
     success: true,
     results: categories.length,
     data: {
-      categories
+      categories: categories.map(cat => ({
+        _id: cat._id,
+        name: cat.name,
+        displayName: cat.displayName
+      }))
     }
   });
 });

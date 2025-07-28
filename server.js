@@ -15,19 +15,11 @@ dotenv.config();
 const app = require('./app');
 const connectDB = require('./config/db');
 
-
-const cors = require('cors');
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
-
-
 // Connect to database
 connectDB();
 
 // Start server
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${port} in ${process.env.NODE_ENV} mode`);
   console.log(`📱 API available at: http://localhost:${port}/api/v1`);

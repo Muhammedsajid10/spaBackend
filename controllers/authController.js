@@ -243,17 +243,26 @@ const forgotPassword = catchAsync(async (req, res, next) => {
 
   // 3) Send it to user's email
   try {
-    const resetURL = `${req.protocol}://${req.get('host')}/api/v1/auth/reset-password/${resetToken}`;
+    // Use frontend URL for the reset link
+    const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    // TODO: Send password reset email
-    // await sendPasswordResetEmail(user.email, resetURL);
+    // Send password reset email using EmailService
+    const EmailService = require('../services/emailService');
+    const emailService = new EmailService();
+    
+    await emailService.sendPasswordResetEmail(
+      user.email, 
+      resetURL, 
+      user.firstName || 'User'
+    );
 
     res.status(200).json({
       success: true,
-      message: 'Password reset token sent to email',
+      message: 'Password reset instructions sent to your email',
       resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
     });
   } catch (err) {
+    console.error('Password reset email error:', err);
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save({ validateBeforeSave: false });
@@ -290,6 +299,10 @@ const resetPassword = catchAsync(async (req, res, next) => {
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
   user.passwordChangedAt = new Date();
+  // If user successfully resets password, we can assume email is verified
+  user.isEmailVerified = true;
+  user.emailVerificationToken = undefined;
+  user.emailVerificationExpires = undefined;
   await user.save();
 
   // 3) Log the user in, send JWT
@@ -641,6 +654,40 @@ const createAdminUser = catchAsync(async (req, res, next) => {
   });
 });
 
+// Admin: Manually verify user email
+const adminVerifyUserEmail = catchAsync(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Email is required'
+    });
+  }
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found'
+    });
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerificationToken = undefined;
+  user.emailVerificationExpires = undefined;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: `Email verified for user: ${user.email}`,
+    data: {
+      email: user.email,
+      isEmailVerified: user.isEmailVerified
+    }
+  });
+});
+
 module.exports = {
   signup,
   login,
@@ -656,6 +703,7 @@ module.exports = {
   refreshToken,
   facebookAuth,
   googleAuth,
-  createAdminUser
+  createAdminUser,
+  adminVerifyUserEmail
 };
 

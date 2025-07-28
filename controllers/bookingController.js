@@ -292,12 +292,30 @@ const createBooking = async (req, res) => {
         await clientUser.save();
       }
     } else {
-      // If no client data, maybe default to the admin or throw error
-      return res.status(400).json({ message: 'Client information is required' });
+      // If no client data provided, use the current authenticated user as the client
+      clientUser = req.user;
+      console.log('Using authenticated user as client:', {
+        id: clientUser._id,
+        email: clientUser.email,
+        name: `${clientUser.firstName} ${clientUser.lastName}`,
+        objectIdType: clientUser._id.constructor.name
+      });
+    }
+
+    // Ensure we have a valid client
+    if (!clientUser || !clientUser._id) {
+      return res.status(400).json({ 
+        message: 'Unable to determine client information. Please try logging in again.' 
+      });
     }
 
     const totalAmount = services.reduce((acc, s) => acc + (s.price || 0), 0);
     const totalDuration = services.reduce((acc, s) => acc + (s.duration || 0), 0);
+
+    console.log('Creating booking with client ID:', clientUser._id);
+    console.log('Client ID type:', clientUser._id.constructor.name);
+    console.log('Services:', services.length);
+    console.log('Total amount:', totalAmount);
 
     const newBooking = new Booking({
       client: clientUser._id,
@@ -308,7 +326,7 @@ const createBooking = async (req, res) => {
       paymentMethod,
       status: 'confirmed',
       notes,
-      bookedBy: adminId,
+      bookedBy: clientUser._id, // Use client ID instead of adminId for self-booking
     });
 
     // Ensure finalAmount is set (pre-save will also calculate it, but set here for validation)

@@ -1,6 +1,7 @@
 const express = require('express');
 const authController = require('../controllers/authController');
 const { protect, loginLimiter, signupLimiter, passwordResetLimiter } = require('../middleware/authMiddleware');
+const { isAdmin } = require('../middleware/roleMiddleware');
 
 const router = express.Router();
 
@@ -26,6 +27,9 @@ router.patch('/update-me', authController.updateMe);
 router.delete('/delete-me', authController.deleteMe);
 router.patch('/update-password', authController.updatePassword);
 router.post('/refresh-token', authController.refreshToken);
+
+// Admin routes
+router.post('/admin/verify-email', isAdmin, authController.adminVerifyUserEmail);
 
 module.exports = router;
 
