@@ -76,14 +76,18 @@ if (process.env.NODE_ENV === 'development') {
 
 // Rate limiting
 const limiter = rateLimit({
-  max: process.env.RATE_LIMIT_MAX || 1000,
-  windowMs: process.env.RATE_LIMIT_WINDOW || 60 * 60 * 1000, // 1 hour
+  max: process.env.RATE_LIMIT_MAX || 5000, // Increased from 1000 to 5000
+  windowMs: process.env.RATE_LIMIT_WINDOW || 15 * 60 * 1000, // Changed from 1 hour to 15 minutes
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for development
+  skip: (req) => {
+    return process.env.NODE_ENV === 'development';
+  }
 });
 app.use('/api', limiter);
 
