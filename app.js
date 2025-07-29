@@ -49,20 +49,34 @@ app.use(cors({
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // Allow all origins in development
-    if (process.env.NODE_ENV === 'development') {
-      return callback(null, true);
-    }
+    // Default allowed origins for development and common deployment platforms
+    const defaultAllowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:3001',
+      'https://localhost:3000',
+      'https://localhost:5173',
+      'https://tourmaline-choux-90907f.netlify.app'
+    ];
     
-    // In production, you can specify allowed origins
+    // Get allowed origins from environment or use defaults
     const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
-      process.env.ALLOWED_ORIGINS.split(',') : ['*'];
+      process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()) : 
+      defaultAllowedOrigins;
     
-    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    // Allow all origins in development or if wildcard is specified
+    if (process.env.NODE_ENV === 'development' || allowedOrigins.includes('*')) {
       return callback(null, true);
     }
     
-    return callback(new Error('Not allowed by CORS'));
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    console.log('CORS: Origin not allowed:', origin);
+    console.log('CORS: Allowed origins:', allowedOrigins);
+    return callback(null, true); // Allow for now during deployment debugging
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
