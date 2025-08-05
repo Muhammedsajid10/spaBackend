@@ -143,21 +143,29 @@ const signup = catchAsync(async (req, res, next) => {
     dateOfBirth,
     gender,
     address,
-    role: role === 'admin' ? 'client' : role // Prevent admin creation through signup
+    role: role === 'admin' ? 'client' : role, // Prevent admin creation through signup
+    isEmailVerified: true // All users are auto-verified
   });
 
-  let verificationToken;
+  // Original verification code (commented out)
+  /*
+  // Generate verification token
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  newUser.emailVerificationToken = crypto
+    .createHash('sha256')
+    .update(verificationToken)
+    .digest('hex');
+  newUser.isEmailVerified = false;
+  await newUser.save({ validateBeforeSave: false });
+  
+  // Send verification email if enabled
   if (process.env.EMAIL_VERIFICATION_ENABLED === 'true') {
-    verificationToken = crypto.randomBytes(32).toString('hex');
-    newUser.emailVerificationToken = crypto
-      .createHash('sha256')
-      .update(verificationToken)
-      .digest('hex');
-    await newUser.save({ validateBeforeSave: false });
-  } else {
-    newUser.isEmailVerified = true;
-    await newUser.save({ validateBeforeSave: false });
+    await sendVerificationEmail(email, verificationToken);
   }
+  */
+  
+  // Verification emails disabled
+  let verificationToken;
 
   // Send customized welcome+verification email to employee
   if (role === 'employee') {
@@ -201,12 +209,21 @@ const login = catchAsync(async (req, res, next) => {
     });
   }
 
-  // 4) Check if email is verified (if verification is enabled)
-  if (process.env.EMAIL_VERIFICATION_ENABLED === 'true' && !user.isEmailVerified) {
+  // 4) Email verification check - DISABLED (commented out)
+  /*
+  if (!user.isEmailVerified) {
     return res.status(401).json({
       success: false,
       message: 'Please verify your email before logging in'
     });
+  }
+  */
+  
+  // Auto-verify users if they're not already verified
+  if (!user.isEmailVerified) {
+    user.isEmailVerified = true;
+    await user.save({ validateBeforeSave: false });
+    console.log(`Auto-verified user: ${user.email}`);
   }
 
   // 5) If everything ok, send token to client
