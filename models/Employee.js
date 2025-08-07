@@ -219,7 +219,7 @@ employeeSchema.index({ specializations: 1 });
 employeeSchema.pre(/^find/, function(next) {
   this.populate({
     path: 'user',
-    select: 'firstName lastName email phone profileImage'
+    select: 'firstName lastName email phone profileImage isActive'
   });
   next();
 });
