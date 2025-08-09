@@ -11,7 +11,12 @@ const catchAsync = (fn) => {
 
 // Create payment intent
 const createPayment = catchAsync(async (req, res, next) => {
-  const { bookingId, amount, currency, paymentMethod, gateway } = req.body;
+  let { bookingId, amount, currency, paymentMethod, gateway } = req.body;
+  // Backward compatibility: map deprecated gateway name to stripe
+  if (gateway === 'network_international') {
+    console.log('Mapping deprecated gateway network_international to stripe');
+    gateway = 'stripe';
+  }
   const userId = req.user._id;
 
   // Validate required fields
@@ -48,12 +53,12 @@ const createPayment = catchAsync(async (req, res, next) => {
     });
   }
 
-  // Validate gateway
-  const validGateways = ['network_international', 'stripe'];
+  // Validate gateway (stripe only)
+  const validGateways = ['stripe'];
   if (!validGateways.includes(gateway)) {
     return res.status(400).json({
       success: false,
-      message: `Invalid payment gateway. Supported gateways: ${validGateways.join(', ')}`
+      message: `Invalid payment gateway. Supported gateway: stripe`
     });
   }
 
@@ -296,16 +301,7 @@ const getAvailableGateways = catchAsync(async (req, res, next) => {
     });
   }
   
-  // Keep network_international for backward compatibility (redirects to Stripe)
-  gateways.push({
-    name: 'network_international',
-    displayName: 'Secure Payment Gateway',
-    description: 'Credit/Debit Cards, Digital Wallets, Bank Transfer',
-    supportedCurrencies: ['AED', 'USD', 'EUR', 'GBP', 'SAR', 'KWD', 'QAR', 'BHD', 'OMR'],
-    supportedMethods: ['card', 'digital_wallet', 'bank_transfer'],
-    region: 'UAE & Middle East',
-    logo: 'https://images.ctfassets.net/fzn2n1nzq965/HTTOloNPhisV9P4hlMPNA/cacf1bb88b9fc492dfad34378d844280/Stripe_icon_-_square.svg'
-  });
+  // Removed network_international gateway (using Stripe only)
 
   res.status(200).json({
     success: true,
@@ -519,27 +515,6 @@ const handleStripeWebhook = catchAsync(async (req, res, next) => {
   }
 });
 
-// Network International webhook handler (backward compatibility - redirects to Stripe)
-const handleNetworkInternationalWebhook = catchAsync(async (req, res, next) => {
-  try {
-    console.log('Network International Webhook received (redirecting to Stripe):', req.body);
-    
-    const result = await paymentService.processNetworkInternationalWebhook(req.body);
-    
-    res.status(200).json({
-      success: true,
-      message: 'Webhook processed successfully',
-      data: result
-    });
-  } catch (error) {
-    console.error('Network International Webhook error:', error);
-    res.status(400).json({
-      success: false,
-      message: 'Webhook processing failed',
-      error: error.message
-    });
-  }
-});
 
 // Payment success callback
 const paymentSuccess = catchAsync(async (req, res, next) => {
@@ -703,7 +678,6 @@ module.exports = {
   getPaymentById,
   getAvailableGateways,
   handleStripeWebhook,
-  handleNetworkInternationalWebhook,
   paymentSuccess,
   paymentCancel,
   getCashMovementSummary,
