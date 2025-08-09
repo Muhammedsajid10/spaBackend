@@ -27,7 +27,7 @@ router.get('/cancel', paymentController.paymentCancel);
 
 // Webhook endpoints (no authentication required)
 router.post('/webhook/stripe', paymentController.handleStripeWebhook);
-router.post('/webhook/network_international', paymentController.handleNetworkInternationalWebhook);
+// Removed legacy network_international webhook (Stripe only)
 
 // Admin: get all payments
 router.get('/admin/all', isAdmin, paymentController.getAllPayments);
