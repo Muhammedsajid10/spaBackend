@@ -178,8 +178,7 @@ class PaymentService {
       console.log('Mock payment gateway initialized for testing (Stripe credentials not configured)');
     }
     
-    // Keep network_international for backward compatibility, but redirect to Stripe
-    this.gateways.set('network_international', this.gateways.get('stripe'));
+  // Removed legacy network_international gateway (Stripe only now)
   }
 
   getGateway(gatewayName) {
@@ -224,7 +223,7 @@ class PaymentService {
           description: `SPA Booking - ${booking.services[0]?.service?.name || 'Service'}`,
           returnUrl: `${process.env.FRONTEND_URL}/payment/success?paymentId=${payment._id}`,
           cancelUrl: `${process.env.FRONTEND_URL}/payment/cancel?paymentId=${payment._id}`,
-          notifyUrl: `${process.env.BACKEND_URL}/api/v1/payments/webhook/network_international`
+          notifyUrl: `${process.env.BACKEND_URL}/api/v1/payments/webhook/stripe`
         }
       );
 
