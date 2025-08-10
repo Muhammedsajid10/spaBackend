@@ -317,26 +317,36 @@ const createBooking = async (req, res) => {
     console.log('Services:', services.length);
     console.log('Total amount:', totalAmount);
 
-    // Idempotency safeguard: prevent duplicate bookings (same client + same appointmentDate + same services set) created within the last 5 minutes
+    // Idempotency safeguard: prevent duplicate bookings (same client + same appointmentDate (day) + same services set) created recently
     try {
-      const serviceIdsSet = new Set(services.map(s => String(s.service || s.serviceId || s._id)));
-      // Fetch recent bookings for this client in short time window
+      const normalizeServiceId = (s) => String(s.service || s.serviceId || s._id);
+      const serviceIdsSet = new Set(services.map(normalizeServiceId));
+      const sortedIds = [...serviceIdsSet].sort();
+      const day = new Date(appointmentDate);
+      day.setHours(0,0,0,0);
+      const nextDay = new Date(day); nextDay.setDate(day.getDate() + 1);
       const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
+
       const recentBookings = await Booking.find({
         client: clientUser._id,
-        appointmentDate: new Date(appointmentDate),
+        appointmentDate: { $gte: day, $lt: nextDay },
         createdAt: { $gte: fiveMinsAgo }
-      }).limit(10);
+      }).limit(20);
 
       const duplicate = recentBookings.find(b => {
         if (!b.services || b.services.length !== services.length) return false;
-        const bSet = new Set(b.services.map(x => String(x.service)));
-        if (bSet.size !== serviceIdsSet.size) return false;
-        for (const id of serviceIdsSet) if (!bSet.has(id)) return false;
+        const bIds = b.services.map(x => String(x.service)).sort();
+        if (bIds.length !== sortedIds.length) return false;
+        for (let i=0;i<bIds.length;i++) if (bIds[i] !== sortedIds[i]) return false;
         return true;
       });
 
       if (duplicate) {
+        console.log('[Idempotency] Duplicate booking detected. Returning existing booking', {
+          existingId: duplicate._id.toString(),
+          bookingNumber: duplicate.bookingNumber,
+          services: sortedIds
+        });
         return res.status(200).json({
           success: true,
           message: 'Duplicate booking detected. Returning existing booking.',
@@ -345,7 +355,7 @@ const createBooking = async (req, res) => {
         });
       }
     } catch (dupErr) {
-      console.warn('Duplicate booking safeguard error (continuing without blocking):', dupErr.message);
+      console.warn('Duplicate booking safeguard error (continuing without blocking):', dupErr);
     }
 
     const newBooking = new Booking({
