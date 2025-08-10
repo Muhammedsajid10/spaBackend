@@ -317,6 +317,37 @@ const createBooking = async (req, res) => {
     console.log('Services:', services.length);
     console.log('Total amount:', totalAmount);
 
+    // Idempotency safeguard: prevent duplicate bookings (same client + same appointmentDate + same services set) created within the last 5 minutes
+    try {
+      const serviceIdsSet = new Set(services.map(s => String(s.service || s.serviceId || s._id)));
+      // Fetch recent bookings for this client in short time window
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const recentBookings = await Booking.find({
+        client: clientUser._id,
+        appointmentDate: new Date(appointmentDate),
+        createdAt: { $gte: fiveMinsAgo }
+      }).limit(10);
+
+      const duplicate = recentBookings.find(b => {
+        if (!b.services || b.services.length !== services.length) return false;
+        const bSet = new Set(b.services.map(x => String(x.service)));
+        if (bSet.size !== serviceIdsSet.size) return false;
+        for (const id of serviceIdsSet) if (!bSet.has(id)) return false;
+        return true;
+      });
+
+      if (duplicate) {
+        return res.status(200).json({
+          success: true,
+          message: 'Duplicate booking detected. Returning existing booking.',
+          data: { booking: duplicate },
+          duplicate: true
+        });
+      }
+    } catch (dupErr) {
+      console.warn('Duplicate booking safeguard error (continuing without blocking):', dupErr.message);
+    }
+
     const newBooking = new Booking({
       client: clientUser._id,
       services,
