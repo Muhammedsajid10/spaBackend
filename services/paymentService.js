@@ -158,12 +158,13 @@ class PaymentService {
 
   initializeGateways() {
     // Initialize Stripe
-    if (process.env.STRIPE_SECRET_KEY && 
-        process.env.STRIPE_PUBLISHABLE_KEY &&
-        process.env.STRIPE_SECRET_KEY !== 'sk_test_your_secret_key') {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+    const looksValidStripeKeys = secretKey && publishableKey && /^sk_(test|live)_/.test(secretKey) && /^pk_(test|live)_/.test(publishableKey) && !/your_secret_key/i.test(secretKey);
+    if (looksValidStripeKeys) {
       this.gateways.set('stripe', new StripeGateway({
-        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-        secretKey: process.env.STRIPE_SECRET_KEY,
+        publishableKey,
+        secretKey,
         webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
         environment: process.env.STRIPE_ENVIRONMENT || 'test',
         currency: process.env.STRIPE_CURRENCY || 'AED'
@@ -175,7 +176,7 @@ class PaymentService {
         environment: 'test',
         currency: 'AED'
       }));
-      console.log('Mock payment gateway initialized for testing (Stripe credentials not configured)');
+      console.log('Mock payment gateway initialized for testing (Stripe credentials not configured or invalid)');
     }
     
   // Removed legacy network_international gateway (Stripe only now)
