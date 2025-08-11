@@ -190,7 +190,7 @@ class PaymentService {
     return gateway;
   }
 
-  async createPayment(bookingId, userId, amount, currency, paymentMethod, gatewayName) {
+  async createPayment(bookingId, userId, amount, currency, paymentMethod, gatewayName, extraMetadata = {}) {
     try {
       // Validate booking
       const booking = await Booking.findById(bookingId).populate('client', 'firstName lastName email phone');
@@ -206,7 +206,8 @@ class PaymentService {
         currency: currency.toUpperCase(),
         paymentMethod,
         paymentGateway: gatewayName,
-        status: 'pending'
+        status: 'pending',
+        metadata: Object.keys(extraMetadata).length ? extraMetadata : undefined
       });
 
       // Get payment gateway
@@ -224,7 +225,8 @@ class PaymentService {
           description: `SPA Booking - ${booking.services[0]?.service?.name || 'Service'}`,
           returnUrl: `${process.env.FRONTEND_URL}/payment/success?paymentId=${payment._id}`,
           cancelUrl: `${process.env.FRONTEND_URL}/payment/cancel?paymentId=${payment._id}`,
-          notifyUrl: `${process.env.BACKEND_URL}/api/v1/payments/webhook/stripe`
+          notifyUrl: `${process.env.BACKEND_URL}/api/v1/payments/webhook/stripe`,
+          ...extraMetadata
         }
       );
 
@@ -242,7 +244,8 @@ class PaymentService {
         paymentIntent: paymentIntent.paymentIntentId,
         clientSecret: paymentIntent.clientSecret,
         paymentUrl: paymentIntent.paymentUrl,
-        status: paymentIntent.status
+        status: paymentIntent.status,
+        metadata: payment.metadata
       };
     } catch (error) {
       throw new Error(`Payment creation failed: ${error.message}`);
