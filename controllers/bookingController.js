@@ -252,15 +252,25 @@ const createBookingConfirmation = async (req, res) => {
 // AUTHENTICATED BOOKING CONTROLLERS
 // ========================================
 
-// Create booking
+// Create booking (supports multiple services & professionals)
 const createBooking = async (req, res) => {
   try {
-    const { services, appointmentDate, notes, paymentMethod, client: clientData } = req.body;
-    const adminId = req.user.id; // Admin creating the booking
-
-    if (!services || !services.length) {
-      return res.status(400).json({ message: 'At least one service is required' });
+    let { services: incomingServices, appointmentDate, notes, paymentMethod, client: clientData, selectionMode } = req.body;
+    if (!incomingServices || !Array.isArray(incomingServices) || incomingServices.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one service is required' });
     }
+    if (!appointmentDate) {
+      return res.status(400).json({ success: false, message: 'appointmentDate is required' });
+    }
+    // Normalize date (store midnight for day clarity)
+    const apptDateObj = new Date(appointmentDate);
+    if (isNaN(apptDateObj.getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid appointmentDate' });
+    }
+
+    // Prepare day bounds for availability lookups
+    const dayStart = new Date(apptDateObj); dayStart.setHours(0,0,0,0);
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
 
     // Find or create the client user
     let clientUser;
@@ -309,65 +319,106 @@ const createBooking = async (req, res) => {
       });
     }
 
-    const totalAmount = services.reduce((acc, s) => acc + (s.price || 0), 0);
-    const totalDuration = services.reduce((acc, s) => acc + (s.duration || 0), 0);
+    // Load all active employees once for potential auto-assignment ('any')
+    const allActiveEmployees = await Employee.find({ isActive: true })
+      .populate('user', 'firstName lastName')
+      .select('user position employeeId specializations performance workSchedule');
 
-    console.log('Creating booking with client ID:', clientUser._id);
-    console.log('Client ID type:', clientUser._id.constructor.name);
-    console.log('Services:', services.length);
-    console.log('Total amount:', totalAmount);
-
-    // Idempotency safeguard: prevent duplicate bookings (same client + same appointmentDate (day) + same services set) created recently
-    try {
-      const normalizeServiceId = (s) => String(s.service || s.serviceId || s._id);
-      const serviceIdsSet = new Set(services.map(normalizeServiceId));
-      const sortedIds = [...serviceIdsSet].sort();
-      const day = new Date(appointmentDate);
-      day.setHours(0,0,0,0);
-      const nextDay = new Date(day); nextDay.setDate(day.getDate() + 1);
-      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
-
-      const recentBookings = await Booking.find({
-        client: clientUser._id,
-        appointmentDate: { $gte: day, $lt: nextDay },
-        createdAt: { $gte: fiveMinsAgo }
-      }).limit(20);
-
-      const duplicate = recentBookings.find(b => {
-        if (!b.services || b.services.length !== services.length) return false;
-        const bIds = b.services.map(x => String(x.service)).sort();
-        if (bIds.length !== sortedIds.length) return false;
-        for (let i=0;i<bIds.length;i++) if (bIds[i] !== sortedIds[i]) return false;
-        return true;
+    // Preload existing bookings for the day to avoid conflicts
+    const existingDayBookings = await Booking.find({ appointmentDate: { $gte: dayStart, $lt: dayEnd } })
+      .select('services.startTime services.endTime services.employee');
+    const bookingsByEmployee = new Map();
+    existingDayBookings.forEach(b => {
+      (b.services || []).forEach(svc => {
+        if (!svc.employee) return;
+        const key = String(svc.employee);
+        if (!bookingsByEmployee.has(key)) bookingsByEmployee.set(key, []);
+        bookingsByEmployee.get(key).push({ start: new Date(svc.startTime), end: new Date(svc.endTime) });
       });
+    });
 
-      if (duplicate) {
-        console.log('[Idempotency] Duplicate booking detected. Returning existing booking', {
-          existingId: duplicate._id.toString(),
-          bookingNumber: duplicate.bookingNumber,
-          services: sortedIds
-        });
-        return res.status(200).json({
-          success: true,
-          message: 'Duplicate booking detected. Returning existing booking.',
-          data: { booking: duplicate },
-          duplicate: true
-        });
+    const overlaps = (ranges, start, end) => ranges.some(r => start < r.end && end > r.start);
+    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    const isWorking = (employee, dateObj) => {
+      const sched = employee.workSchedule?.[dayNames[dateObj.getDay()]];
+      return sched && sched.isWorking;
+    };
+
+    // Transform each incoming service: validate service exists; override price & duration; validate/assign employee
+    const transformedServices = [];
+    for (const raw of incomingServices) {
+      const serviceId = raw.service || raw.serviceId || raw._id;
+      if (!serviceId) {
+        return res.status(400).json({ success: false, message: 'Service id missing on one of the service entries' });
       }
-    } catch (dupErr) {
-      console.warn('Duplicate booking safeguard error (continuing without blocking):', dupErr);
+      const serviceDoc = await Service.findById(serviceId).select('price duration name');
+      if (!serviceDoc) {
+        return res.status(404).json({ success: false, message: `Service not found: ${serviceId}` });
+      }
+      // Determine start/end times (use provided or default sequential based on provided)
+      let startTime = raw.startTime ? new Date(raw.startTime) : new Date(apptDateObj);
+      if (isNaN(startTime.getTime())) startTime = new Date(apptDateObj);
+      let endTime = raw.endTime ? new Date(raw.endTime) : new Date(startTime.getTime() + serviceDoc.duration * 60000);
+      if (isNaN(endTime.getTime())) endTime = new Date(startTime.getTime() + serviceDoc.duration * 60000);
+      if (endTime <= startTime) {
+        endTime = new Date(startTime.getTime() + serviceDoc.duration * 60000);
+      }
+
+      let employeeId = raw.employee || raw.employeeId; // expected field from frontend
+      if (!employeeId || employeeId === 'any') {
+        // Auto assign first available employee not overlapping
+        const candidate = allActiveEmployees.find(emp => {
+          if (!isWorking(emp, startTime)) return false;
+          const existing = bookingsByEmployee.get(String(emp._id)) || [];
+          return !overlaps(existing, startTime, endTime);
+        });
+        if (!candidate) {
+          return res.status(409).json({ success: false, message: `No available professional for '${serviceDoc.name}' at selected time.` });
+        }
+        employeeId = candidate._id;
+        if (!bookingsByEmployee.has(String(employeeId))) bookingsByEmployee.set(String(employeeId), []);
+        bookingsByEmployee.get(String(employeeId)).push({ start: startTime, end: endTime });
+      } else {
+        // Validate employee exists
+        const empDoc = allActiveEmployees.find(e => String(e._id) === String(employeeId));
+        if (!empDoc) {
+          return res.status(404).json({ success: false, message: `Employee not found or inactive: ${employeeId}` });
+        }
+        // Overlap check for this employee
+        const existingRanges = bookingsByEmployee.get(String(employeeId)) || [];
+        if (overlaps(existingRanges, startTime, endTime)) {
+          return res.status(409).json({ success: false, message: `Employee has a conflicting booking for service '${serviceDoc.name}'.` });
+        }
+        if (!bookingsByEmployee.has(String(employeeId))) bookingsByEmployee.set(String(employeeId), []);
+        bookingsByEmployee.get(String(employeeId)).push({ start: startTime, end: endTime });
+      }
+
+      transformedServices.push({
+        service: serviceDoc._id,
+        employee: employeeId,
+        price: serviceDoc.price,
+        duration: serviceDoc.duration,
+        startTime,
+        endTime,
+        notes: raw.notes || ''
+      });
     }
+
+    const totalAmount = transformedServices.reduce((sum, s) => sum + s.price, 0);
+    const totalDuration = transformedServices.reduce((sum, s) => sum + s.duration, 0);
+
+    console.log('Creating booking (multi-service) client:', clientUser._id, 'services:', transformedServices.length, 'mode:', selectionMode);
 
     const newBooking = new Booking({
       client: clientUser._id,
-      services,
-      appointmentDate,
-      totalAmount: totalAmount,
-      totalDuration: totalDuration,
+      services: transformedServices,
+      appointmentDate: apptDateObj,
+      totalAmount,
+      totalDuration,
       paymentMethod,
       status: 'confirmed',
       notes,
-      bookedBy: clientUser._id, // Use client ID instead of adminId for self-booking
+      bookedBy: clientUser._id,
     });
 
     // Ensure finalAmount is set (pre-save will also calculate it, but set here for validation)
