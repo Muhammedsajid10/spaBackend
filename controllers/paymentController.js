@@ -9,7 +9,7 @@ const catchAsync = (fn) => {
   };
 };
 
-// Create payment intent
+// Create payment intent (supports optional metadata like UPI VPA)
 const createPayment = catchAsync(async (req, res, next) => {
   let { bookingId, amount, currency, paymentMethod, gateway } = req.body;
   // Backward compatibility: map deprecated gateway name to stripe
@@ -101,14 +101,27 @@ const createPayment = catchAsync(async (req, res, next) => {
     });
   }
 
-  // Create payment
+  // Optional metadata collection (e.g., UPI)
+  const metadata = {};
+  if (req.body.upiVpa) {
+    metadata.upiVpa = String(req.body.upiVpa).trim();
+  }
+  if (req.body.note) {
+    metadata.note = String(req.body.note).trim();
+  }
+  if (metadata.upiVpa) {
+    console.log('Payment create: received UPI VPA', metadata.upiVpa);
+  }
+
+  // Create payment (pass metadata)
   const result = await paymentService.createPayment(
     booking._id,  // Use booking ObjectId instead of bookingNumber
     userId,
     amount,
     currency,
     paymentMethod,
-    gateway
+    gateway,
+    metadata
   );
 
   res.status(201).json({
