@@ -58,49 +58,56 @@ const employeeSchema = new mongoose.Schema({
       startTime: String, // Format: "09:00"
       endTime: String,   // Format: "17:00"
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String // Comma-separated multiple shifts
     },
     tuesday: {
       isWorking: { type: Boolean, default: false },
       startTime: String,
       endTime: String,
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String
     },
     wednesday: {
       isWorking: { type: Boolean, default: false },
       startTime: String,
       endTime: String,
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String
     },
     thursday: {
       isWorking: { type: Boolean, default: false },
       startTime: String,
       endTime: String,
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String
     },
     friday: {
       isWorking: { type: Boolean, default: false },
       startTime: String,
       endTime: String,
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String
     },
     saturday: {
       isWorking: { type: Boolean, default: false },
       startTime: String,
       endTime: String,
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String
     },
     sunday: {
       isWorking: { type: Boolean, default: false },
       startTime: String,
       endTime: String,
       breakStart: String,
-      breakEnd: String
+      breakEnd: String,
+      shifts: String
     }
   },
   specializations: [{
