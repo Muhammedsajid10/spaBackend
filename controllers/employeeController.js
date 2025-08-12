@@ -181,14 +181,24 @@ const getEmployee = catchAsync(async (req, res, next) => {
 
 // Update employee
 const updateEmployee = catchAsync(async (req, res, next) => {
+  console.log('=== EMPLOYEE UPDATE DEBUG ===');
+  console.log('Employee ID:', req.params.id);
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  console.log('User role:', req.user?.role);
+  console.log('User ID:', req.user?._id);
+
   const employee = await Employee.findById(req.params.id);
 
   if (!employee) {
+    console.log('❌ Employee not found with ID:', req.params.id);
     return res.status(404).json({
       success: false,
       message: 'No employee found with that ID'
     });
   }
+
+  console.log('✅ Employee found:', employee.employeeId);
+  console.log('Current workSchedule:', JSON.stringify(employee.workSchedule, null, 2));
 
   // Check if user can update this employee
   if (req.user.role === 'employee') {
@@ -214,10 +224,78 @@ const updateEmployee = catchAsync(async (req, res, next) => {
     req.body = filteredBody;
   }
 
-  const updatedEmployee = await Employee.findByIdAndUpdate(req.params.id, req.body, {
-    new: true,
-    runValidators: true
+  console.log('Final request body to be saved:', JSON.stringify(req.body, null, 2));
+
+  // Fix for nested workSchedule updates - Mongoose might not properly update nested objects
+  let updatedEmployee;
+  
+  if (req.body.workSchedule) {
+    // Handle workSchedule updates manually to ensure proper nested object updates
+    console.log('🔧 Handling workSchedule update manually...');
+    
+    // Get current employee to preserve existing workSchedule
+    const currentWorkSchedule = employee.workSchedule || {};
+    
+    // Merge the update with existing workSchedule
+    Object.keys(req.body.workSchedule).forEach(day => {
+      if (!currentWorkSchedule[day]) {
+        currentWorkSchedule[day] = {};
+      }
+      // Merge the day's schedule update
+      currentWorkSchedule[day] = {
+        ...currentWorkSchedule[day],
+        ...req.body.workSchedule[day]
+      };
+      console.log(`  Updated ${day}:`, currentWorkSchedule[day]);
+    });
+    
+    // Update the employee with the merged workSchedule
+    const updateData = {
+      ...req.body,
+      workSchedule: currentWorkSchedule
+    };
+    
+    console.log('🔄 Final merged workSchedule to save:', JSON.stringify(currentWorkSchedule, null, 2));
+    
+    updatedEmployee = await Employee.findByIdAndUpdate(
+      req.params.id, 
+      updateData, 
+      {
+        new: true,
+        runValidators: true,
+        // Force Mongoose to treat this as a complete replacement of workSchedule
+        overwrite: false,
+        // Ensure nested objects are properly saved
+        strict: true
+      }
+    );
+  } else {
+    // Regular update for non-workSchedule fields
+    updatedEmployee = await Employee.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true
+    });
+  }
+
+  console.log('✅ Employee updated successfully');
+  console.log('Updated workSchedule:', JSON.stringify(updatedEmployee.workSchedule, null, 2));
+  
+  // Double-check: Re-fetch the employee to verify the data was actually saved to DB
+  const verificationEmployee = await Employee.findById(req.params.id);
+  console.log('🔍 Database verification - Re-fetched employee workSchedule:');
+  console.log(JSON.stringify(verificationEmployee.workSchedule, null, 2));
+  
+  // Check if the shifts field is actually present in the database
+  Object.keys(req.body.workSchedule || {}).forEach(day => {
+    const dbDaySchedule = verificationEmployee.workSchedule[day];
+    const sentDaySchedule = req.body.workSchedule[day];
+    console.log(`📊 Day "${day}" verification:`);
+    console.log(`  Sent shifts: "${sentDaySchedule.shifts}"`);
+    console.log(`  Saved shifts: "${dbDaySchedule?.shifts}"`);
+    console.log(`  Match: ${sentDaySchedule.shifts === dbDaySchedule?.shifts ? '✅' : '❌'}`);
   });
+  
+  console.log('=== END DEBUG ===');
 
   res.status(200).json({
     success: true,
