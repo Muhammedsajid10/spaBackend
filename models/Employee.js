@@ -53,62 +53,32 @@ const employeeSchema = new mongoose.Schema({
     max: [100, 'Commission rate cannot exceed 100%']
   },
   workSchedule: {
-    monday: {
+    type: Map,
+    of: {
       isWorking: { type: Boolean, default: false },
-      startTime: String, // Format: "09:00"
-      endTime: String,   // Format: "17:00"
-      breakStart: String,
-      breakEnd: String,
-      shifts: String // Comma-separated multiple shifts
+      startTime: { type: String, default: null },
+      endTime: { type: String, default: null },
+      shifts: { type: String, default: null }, // For multiple shifts: "09:00 - 13:00, 14:00 - 18:00"
+      shiftsData: [{ // Alternative array format
+        startTime: String,
+        endTime: String
+      }],
+      shiftCount: { type: Number, default: 0 }
     },
-    tuesday: {
-      isWorking: { type: Boolean, default: false },
-      startTime: String,
-      endTime: String,
-      breakStart: String,
-      breakEnd: String,
-      shifts: String
+    default: new Map()
+  },
+  // Keep legacy weekly template for migration purposes (temporary)
+  legacyWorkSchedule: {
+    type: {
+      monday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String },
+      tuesday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String },
+      wednesday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String },
+      thursday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String },
+      friday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String },
+      saturday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String },
+      sunday: { isWorking: Boolean, startTime: String, endTime: String, shifts: String }
     },
-    wednesday: {
-      isWorking: { type: Boolean, default: false },
-      startTime: String,
-      endTime: String,
-      breakStart: String,
-      breakEnd: String,
-      shifts: String
-    },
-    thursday: {
-      isWorking: { type: Boolean, default: false },
-      startTime: String,
-      endTime: String,
-      breakStart: String,
-      breakEnd: String,
-      shifts: String
-    },
-    friday: {
-      isWorking: { type: Boolean, default: false },
-      startTime: String,
-      endTime: String,
-      breakStart: String,
-      breakEnd: String,
-      shifts: String
-    },
-    saturday: {
-      isWorking: { type: Boolean, default: false },
-      startTime: String,
-      endTime: String,
-      breakStart: String,
-      breakEnd: String,
-      shifts: String
-    },
-    sunday: {
-      isWorking: { type: Boolean, default: false },
-      startTime: String,
-      endTime: String,
-      breakStart: String,
-      breakEnd: String,
-      shifts: String
-    }
+    default: {}
   },
   specializations: [{
     type: String,
