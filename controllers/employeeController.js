@@ -132,19 +132,94 @@ const createEmployee = catchAsync(async (req, res, next) => {
 
 // Get all employees
 const getAllEmployees = catchAsync(async (req, res, next) => {
-  const features = new APIFeatures(Employee.find(), req.query)
-    .filter()
-    .sort()
-    .limitFields()
-    .paginate();
+  console.log('📋 Fetching all employees...');
+  console.log('Query params:', req.query);
+  console.log('Headers:', req.headers.authorization ? 'Token present' : 'No token');
+  
+  // Get week start date from query params or use current week
+  const weekStartDate = req.query.weekStartDate ? new Date(req.query.weekStartDate) : new Date();
+  const currentWeekStart = new Date(weekStartDate);
+  currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay()); // Get Sunday
+  
+  console.log('📅 Converting schedules for week starting:', currentWeekStart.toISOString().split('T')[0]);
 
-  const employees = await features.query;
+  // First, let's check all employees regardless of isActive status
+  const allEmployees = await Employee.find({});
+  console.log(`🔍 Total employees in database: ${allEmployees.length}`);
+  
+  const activeEmployees = await Employee.find({ isActive: true });
+  console.log(`✅ Active employees: ${activeEmployees.length}`);
+  
+  const inactiveEmployees = await Employee.find({ isActive: false });
+  console.log(`❌ Inactive employees: ${inactiveEmployees.length}`);
+
+  // Let's see what's in the first few employees
+  if (allEmployees.length > 0) {
+    console.log('📋 Sample employee data:');
+    allEmployees.slice(0, 2).forEach(emp => {
+      console.log(`  - ID: ${emp._id}`);
+      console.log(`  - isActive: ${emp.isActive}`);
+      console.log(`  - hasUser: ${!!emp.user}`);
+      console.log(`  - workSchedule type: ${typeof emp.workSchedule}`);
+    });
+  }
+
+  // Use all employees for now to debug
+  const employees = await Employee.find({})
+    .populate('user', 'firstName lastName email phoneNumber')
+    .sort({ createdAt: -1 });
+
+  console.log(`🔍 Found ${employees.length} employees after populate`);
+
+  // Convert date-specific schedules to weekly view for frontend compatibility
+  const employeesWithWeeklyView = employees.map(employee => {
+    const employeeObj = employee.toObject();
+    
+    console.log(`🔄 Processing employee ${employee._id}:`, {
+      hasUser: !!employee.user,
+      userName: employee.user?.firstName,
+      workScheduleType: typeof employee.workSchedule,
+      isActive: employee.isActive
+    });
+    
+    if (employee.workSchedule && employee.workSchedule.size > 0) {
+      // Convert date-specific schedule to weekly view
+      employeeObj.workSchedule = convertDateScheduleToWeeklyView(employee.workSchedule, currentWeekStart);
+      console.log(`🔄 Converted schedule for ${employee.user?.firstName}:`, employeeObj.workSchedule);
+    } else if (employee.workSchedule && typeof employee.workSchedule === 'object') {
+      // Handle old format (weekly template) - keep as is for now
+      employeeObj.workSchedule = employee.workSchedule;
+      console.log(`📅 Using legacy schedule for ${employee.user?.firstName}`);
+    } else {
+      // Fallback to empty weekly schedule
+      employeeObj.workSchedule = {
+        sunday: { isWorking: false, startTime: null, endTime: null, shifts: null },
+        monday: { isWorking: false, startTime: null, endTime: null, shifts: null },
+        tuesday: { isWorking: false, startTime: null, endTime: null, shifts: null },
+        wednesday: { isWorking: false, startTime: null, endTime: null, shifts: null },
+        thursday: { isWorking: false, startTime: null, endTime: null, shifts: null },
+        friday: { isWorking: false, startTime: null, endTime: null, shifts: null },
+        saturday: { isWorking: false, startTime: null, endTime: null, shifts: null }
+      };
+      console.log(`📝 Created empty schedule for ${employee.user?.firstName || employee._id}`);
+    }
+    
+    return employeeObj;
+  });
+
+  console.log(`✅ Returning ${employeesWithWeeklyView.length} employees to frontend`);
 
   res.status(200).json({
     success: true,
-    results: employees.length,
+    message: 'Employees retrieved successfully',
     data: {
-      employees
+      employees: employeesWithWeeklyView,
+      totalCount: employeesWithWeeklyView.length,
+      debug: {
+        totalInDB: allEmployees.length,
+        activeCount: activeEmployees.length,
+        inactiveCount: inactiveEmployees.length
+      }
     }
   });
 });
@@ -179,7 +254,42 @@ const getEmployee = catchAsync(async (req, res, next) => {
   });
 });
 
-// Update employee
+// Helper function to convert day name + week to specific date
+const getDateFromDayAndWeek = (dayName, weekStartDate) => {
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayIndex = days.indexOf(dayName.toLowerCase());
+  if (dayIndex === -1) return null;
+  
+  const date = new Date(weekStartDate);
+  date.setDate(date.getDate() + dayIndex);
+  return date.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+};
+
+// Helper function to convert date-specific schedule back to weekly view for frontend
+const convertDateScheduleToWeeklyView = (workSchedule, weekStartDate) => {
+  const weeklyView = {};
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  
+  days.forEach(dayName => {
+    const specificDate = getDateFromDayAndWeek(dayName, weekStartDate);
+    const dateSchedule = workSchedule && workSchedule.get ? workSchedule.get(specificDate) : null;
+    
+    if (dateSchedule) {
+      weeklyView[dayName] = dateSchedule;
+    } else {
+      weeklyView[dayName] = {
+        isWorking: false,
+        startTime: null,
+        endTime: null,
+        shifts: null
+      };
+    }
+  });
+  
+  return weeklyView;
+};
+
+// Update the updateEmployee function
 const updateEmployee = catchAsync(async (req, res, next) => {
   console.log('=== EMPLOYEE UPDATE DEBUG ===');
   console.log('Employee ID:', req.params.id);
@@ -224,56 +334,75 @@ const updateEmployee = catchAsync(async (req, res, next) => {
     req.body = filteredBody;
   }
 
+  // Handle workSchedule updates with date-specific storage
+  if (req.body.workSchedule) {
+    console.log('🔄 Processing workSchedule update...');
+    
+    // Get current week start date from request or use current week
+    const weekStartDate = req.body.weekStartDate || new Date();
+    const currentWeekStart = new Date(weekStartDate);
+    currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay()); // Get Sunday
+    
+    console.log('📅 Week start date:', currentWeekStart.toISOString().split('T')[0]);
+
+    // Initialize workSchedule Map if it doesn't exist
+    if (!employee.workSchedule) {
+      employee.workSchedule = new Map();
+    }
+
+    // Convert Map to object if it's a Map for easier handling
+    let currentWorkSchedule;
+    if (employee.workSchedule instanceof Map) {
+      currentWorkSchedule = new Map(employee.workSchedule);
+    } else {
+      // Handle old format - convert to Map
+      currentWorkSchedule = new Map();
+      if (typeof employee.workSchedule === 'object') {
+        Object.entries(employee.workSchedule).forEach(([key, value]) => {
+          currentWorkSchedule.set(key, value);
+        });
+      }
+    }
+
+    // Convert day-based updates to date-specific updates
+    Object.entries(req.body.workSchedule).forEach(([dayName, schedule]) => {
+      const specificDate = getDateFromDayAndWeek(dayName, currentWeekStart);
+      if (specificDate) {
+        console.log(`📝 Updating schedule for ${dayName} (${specificDate}):`, schedule);
+        currentWorkSchedule.set(specificDate, {
+          isWorking: schedule.isWorking || false,
+          startTime: schedule.startTime || null,
+          endTime: schedule.endTime || null,
+          shifts: schedule.shifts || null,
+          shiftsData: schedule.shiftsData || [],
+          shiftCount: schedule.shiftCount || 0
+        });
+      }
+    });
+
+    // Update the request body to use the date-specific schedule
+    req.body.workSchedule = currentWorkSchedule;
+    
+    console.log('💾 Final workSchedule to save:', Array.from(currentWorkSchedule.entries()));
+  }
+
   console.log('Final request body to be saved:', JSON.stringify(req.body, null, 2));
 
-  // Fix for nested workSchedule updates - Mongoose might not properly update nested objects
-  let updatedEmployee;
-  
-  if (req.body.workSchedule) {
-    // Handle workSchedule updates manually to ensure proper nested object updates
-    console.log('🔧 Handling workSchedule update manually...');
-    
-    // Get current employee to preserve existing workSchedule
-    const currentWorkSchedule = employee.workSchedule || {};
-    
-    // Merge the update with existing workSchedule
-    Object.keys(req.body.workSchedule).forEach(day => {
-      if (!currentWorkSchedule[day]) {
-        currentWorkSchedule[day] = {};
-      }
-      // Merge the day's schedule update
-      currentWorkSchedule[day] = {
-        ...currentWorkSchedule[day],
-        ...req.body.workSchedule[day]
-      };
-      console.log(`  Updated ${day}:`, currentWorkSchedule[day]);
-    });
-    
-    // Update the employee with the merged workSchedule
-    const updateData = {
-      ...req.body,
-      workSchedule: currentWorkSchedule
-    };
-    
-    console.log('🔄 Final merged workSchedule to save:', JSON.stringify(currentWorkSchedule, null, 2));
-    
-    updatedEmployee = await Employee.findByIdAndUpdate(
-      req.params.id, 
-      updateData, 
-      {
-        new: true,
-        runValidators: true,
-        // Force Mongoose to treat this as a complete replacement of workSchedule
-        overwrite: false,
-        // Ensure nested objects are properly saved
-        strict: true
-      }
-    );
-  } else {
-    // Regular update for non-workSchedule fields
-    updatedEmployee = await Employee.findByIdAndUpdate(req.params.id, req.body, {
+  // Update the employee
+  const updatedEmployee = await Employee.findByIdAndUpdate(
+    req.params.id, 
+    req.body, 
+    {
       new: true,
-      runValidators: true
+      runValidators: true,
+      strict: false // Allow Map types
+    }
+  ).populate('user', 'firstName lastName email phoneNumber');
+
+  if (!updatedEmployee) {
+    return res.status(404).json({
+      success: false,
+      message: 'Employee not found'
     });
   }
 
@@ -284,16 +413,6 @@ const updateEmployee = catchAsync(async (req, res, next) => {
   const verificationEmployee = await Employee.findById(req.params.id);
   console.log('🔍 Database verification - Re-fetched employee workSchedule:');
   console.log(JSON.stringify(verificationEmployee.workSchedule, null, 2));
-  
-  // Check if the shifts field is actually present in the database
-  Object.keys(req.body.workSchedule || {}).forEach(day => {
-    const dbDaySchedule = verificationEmployee.workSchedule[day];
-    const sentDaySchedule = req.body.workSchedule[day];
-    console.log(`📊 Day "${day}" verification:`);
-    console.log(`  Sent shifts: "${sentDaySchedule.shifts}"`);
-    console.log(`  Saved shifts: "${dbDaySchedule?.shifts}"`);
-    console.log(`  Match: ${sentDaySchedule.shifts === dbDaySchedule?.shifts ? '✅' : '❌'}`);
-  });
   
   console.log('=== END DEBUG ===');
 
