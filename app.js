@@ -15,10 +15,7 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
-const membershipRoutes = require('./routes/membershipRoutes');
-const categoryRoutes = require('./routes/categoryRoutes');
-const feedbackRoutes = require('./routes/feedbackRoutes');
+const membershipRoutes = require('./routes/membershipRoutes'); // Add this line
 
 // Import middleware
 const { isLoggedIn } = require('./middleware/authMiddleware');
@@ -143,6 +140,8 @@ app.use(express.static('public'));
 
 // Note: Authentication middleware is applied per route as needed
 // isLoggedIn middleware is for rendered pages, not API routes
+// Email verification is currently disabled - all users are auto-verified
+// The verification code has been commented out but preserved for future use if needed
 
 // API Routes
 app.use('/api/v1/auth', authRoutes);
@@ -150,10 +149,7 @@ app.use('/api/v1/bookings', bookingRoutes);
 app.use('/api/v1/services', serviceRoutes);
 app.use('/api/v1/employees', employeeRoutes);
 app.use('/api/v1/admin', adminRoutes);
-app.use('/api/v1/payments', paymentRoutes);
-app.use('/api/v1/memberships', membershipRoutes);
-app.use('/api/v1/feedback', feedbackRoutes);
-app.use('/api/v1', categoryRoutes);
+app.use('/api/v1/memberships', membershipRoutes); // Add this line
 
 // Health check endpoint
 app.get('/health', (req, res) => {
