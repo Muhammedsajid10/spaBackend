@@ -2,24 +2,30 @@ const express = require('express');
 const router = express.Router();
 const membershipController = require('../controllers/membershipController');
 const { protect } = require('../middleware/authMiddleware');
-const { isAdmin } = require('../middleware/roleMiddleware');
 
-// All routes require authentication
+console.log('🎯 Membership routes loaded');
+
+ 
 router.use(protect);
 
-// Admin: get all memberships
-router.get('/admin/all', isAdmin, membershipController.getAllMemberships);
 
-// Get memberships for a specific client
-router.get('/client/:id', membershipController.getClientMemberships);
+router.get('/test', (req, res) => {
+  res.json({ message: 'Membership routes working!' });
+});
 
-// Create a membership
-router.post('/', isAdmin, membershipController.createMembership);
 
-// Update a membership
-router.patch('/:id', isAdmin, membershipController.updateMembership);
+router.get('/templates', membershipController.getAllMembershipTemplates);
 
-// Delete a membership
-router.delete('/:id', isAdmin, membershipController.deleteMembership);
 
-module.exports = router; 
+router.get('/purchased', membershipController.getAllPurchasedMemberships);
+
+
+router.post('/template', membershipController.createMembershipTemplate);
+
+
+router.patch('/:id', membershipController.updateMembership);
+
+
+router.delete('/:id', membershipController.deleteMembership);
+
+module.exports = router;
