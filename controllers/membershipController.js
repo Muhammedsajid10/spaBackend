@@ -1,54 +1,135 @@
 const Membership = require('../models/Membership');
+const Service = require('../models/Service');
 const User = require('../models/User');
 
-// Get all memberships (admin)
-exports.getAllMemberships = async (req, res) => {
+
+const getAllMembershipTemplates = async (req, res) => {
   try {
-    const memberships = await Membership.find().populate('client', 'firstName lastName email');
-    res.status(200).json({ success: true, results: memberships.length, data: { memberships } });
+    console.log('📋 Fetching membership templates...');
+    
+    const memberships = await Membership.find({ isTemplate: true })
+      .sort({ createdAt: -1 });
+    
+    res.status(200).json({ 
+      success: true, 
+      results: memberships.length, 
+      data: { memberships } 
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to fetch memberships', error: err.message });
+    console.error('❌ Error fetching templates:', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch membership templates', 
+      error: err.message 
+    });
   }
 };
 
-// Get memberships for a specific client
-exports.getClientMemberships = async (req, res) => {
+const getAllPurchasedMemberships = async (req, res) => {
   try {
-    const memberships = await Membership.find({ client: req.params.id }).populate('client', 'firstName lastName email');
-    res.status(200).json({ success: true, results: memberships.length, data: { memberships } });
+    const memberships = await Membership.find({ isTemplate: false })
+      .sort({ purchaseDate: -1 });
+    
+    res.status(200).json({ 
+      success: true, 
+      results: memberships.length, 
+      data: { memberships } 
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to fetch client memberships', error: err.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch purchased memberships', 
+      error: err.message 
+    });
   }
 };
 
-// Create a membership
-exports.createMembership = async (req, res) => {
+
+const createMembershipTemplate = async (req, res) => {
   try {
-    const membership = await Membership.create(req.body);
-    res.status(201).json({ success: true, data: { membership } });
+    console.log('🆕 Creating membership template:', req.body);
+    
+    const membershipData = {
+      ...req.body,
+      isTemplate: true,
+      createdBy: req.user ? req.user._id : null,
+      status: 'Draft'
+    };
+
+    const membership = await Membership.create(membershipData);
+    
+    res.status(201).json({ 
+      success: true, 
+      data: { membership } 
+    });
   } catch (err) {
-    res.status(400).json({ success: false, message: 'Failed to create membership', error: err.message });
+    console.error('❌ Error creating template:', err);
+    res.status(400).json({ 
+      success: false, 
+      message: 'Failed to create membership template', 
+      error: err.message 
+    });
   }
 };
 
-// Update a membership
-exports.updateMembership = async (req, res) => {
+
+const updateMembership = async (req, res) => {
   try {
-    const membership = await Membership.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    if (!membership) return res.status(404).json({ success: false, message: 'Membership not found' });
-    res.status(200).json({ success: true, data: { membership } });
+    const membership = await Membership.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { new: true, runValidators: true }
+    );
+
+    if (!membership) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Membership not found' 
+      });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      data: { membership } 
+    });
   } catch (err) {
-    res.status(400).json({ success: false, message: 'Failed to update membership', error: err.message });
+    res.status(400).json({ 
+      success: false, 
+      message: 'Failed to update membership', 
+      error: err.message 
+    });
   }
 };
 
-// Delete a membership
-exports.deleteMembership = async (req, res) => {
+
+const deleteMembership = async (req, res) => {
   try {
     const membership = await Membership.findByIdAndDelete(req.params.id);
-    if (!membership) return res.status(404).json({ success: false, message: 'Membership not found' });
-    res.status(200).json({ success: true, message: 'Membership deleted' });
+    if (!membership) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Membership not found' 
+      });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Membership deleted successfully' 
+    });
   } catch (err) {
-    res.status(400).json({ success: false, message: 'Failed to delete membership', error: err.message });
+    res.status(400).json({ 
+      success: false, 
+      message: 'Failed to delete membership', 
+      error: err.message 
+    });
   }
-}; 
+};
+
+
+module.exports = {
+  getAllMembershipTemplates,
+  getAllPurchasedMemberships,
+  createMembershipTemplate,
+  updateMembership,
+  deleteMembership
+};
