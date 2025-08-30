@@ -55,6 +55,10 @@ router.get('/admin/all', isAdmin, bookingController.getAllBookings);
 
 // Admin can manage bookings
 router.patch('/admin/:id', isAdmin, bookingController.updateBooking);
+// Delete booking (admin or employee via generic path)
+router.delete('/:id', canManageBookings, bookingController.deleteBooking);
+// Admin alias delete path (some legacy frontend calls may use /admin/:id with DELETE)
+router.delete('/admin/:id', isAdmin, bookingController.deleteBooking);
 
 module.exports = router;
 
