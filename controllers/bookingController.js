@@ -688,6 +688,78 @@ const updateBooking = async (req, res) => {
   }
 };
 
+// Update single service status within a booking
+const updateServiceStatus = async (req, res) => {
+  try {
+    const { bookingId, serviceId } = req.params;
+    let { status } = req.body;
+    if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
+
+    // Map extended statuses to service-level statuses
+    const statusMap = {
+      booked: 'scheduled',
+      pending: 'scheduled',
+      confirmed: 'scheduled',
+      arrived: 'scheduled', // treat as still scheduled until start
+      started: 'in-progress',
+      'in-progress': 'in-progress',
+      completed: 'completed',
+      cancelled: 'cancelled',
+      'no-show': 'no-show'
+    };
+    const serviceStatus = statusMap[status] || status;
+    const allowed = ['scheduled','in-progress','completed','cancelled','no-show'];
+    if (!allowed.includes(serviceStatus)) {
+      return res.status(400).json({ success: false, message: 'Invalid service status' });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    const svc = booking.services.id(serviceId);
+    if (!svc) return res.status(404).json({ success: false, message: 'Service not found in booking' });
+
+    svc.status = serviceStatus;
+    await booking.save();
+
+    return res.json({ success: true, message: 'Service status updated', data: { bookingId, serviceId, status: serviceStatus } });
+  } catch (error) {
+    console.error('Error updating service status:', error);
+    res.status(500).json({ success: false, message: 'Failed to update service status' });
+  }
+};
+
+// Delete single service from booking
+const deleteServiceFromBooking = async (req, res) => {
+  try {
+    const { bookingId, serviceId } = req.params;
+    const booking = await Booking.findById(bookingId);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    const originalLen = booking.services.length;
+    booking.services = booking.services.filter(s => String(s._id) !== String(serviceId));
+    if (booking.services.length === originalLen) {
+      return res.status(404).json({ success: false, message: 'Service not found in booking' });
+    }
+
+    if (booking.services.length === 0) {
+      await Booking.findByIdAndDelete(bookingId);
+      return res.json({ success: true, message: 'Service deleted and booking removed (no remaining services)', data: { bookingId, serviceId, bookingDeleted: true } });
+    }
+
+    // Recompute totals after removal
+    booking.totalAmount = booking.services.reduce((sum, s) => sum + s.price, 0);
+    booking.totalDuration = booking.services.reduce((sum, s) => sum + s.duration, 0);
+    booking.finalAmount = booking.totalAmount - (booking.discountAmount || 0) + (booking.taxAmount || 0);
+    await booking.save();
+
+    return res.json({ success: true, message: 'Service deleted from booking', data: { bookingId, serviceId, bookingDeleted: false } });
+  } catch (error) {
+    console.error('Error deleting service from booking:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete service from booking' });
+  }
+};
+
 // Delete booking (admin / employee via canManageBookings route)
 const deleteBooking = async (req, res) => {
   try {
@@ -757,6 +829,7 @@ module.exports = {
   // Admin routes
   getAllBookings,
   updateBooking,
+  updateServiceStatus,
   deleteBooking
 };
 
