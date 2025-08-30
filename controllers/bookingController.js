@@ -688,6 +688,23 @@ const updateBooking = async (req, res) => {
   }
 };
 
+// Delete booking (admin / employee via canManageBookings route)
+const deleteBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    await Booking.findByIdAndDelete(id);
+    return res.json({ success: true, message: 'Booking deleted successfully', data: { bookingId: id } });
+  } catch (error) {
+    console.error('Error deleting booking:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete booking' });
+  }
+};
+
 // ========================================
 // HELPER FUNCTIONS
 // ========================================
@@ -739,6 +756,7 @@ module.exports = {
   
   // Admin routes
   getAllBookings,
-  updateBooking
+  updateBooking,
+  deleteBooking
 };
 
