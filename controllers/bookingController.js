@@ -830,6 +830,7 @@ module.exports = {
   getAllBookings,
   updateBooking,
   updateServiceStatus,
+  deleteServiceFromBooking,
   deleteBooking
 };
 
