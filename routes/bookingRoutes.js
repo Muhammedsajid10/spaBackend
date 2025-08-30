@@ -59,6 +59,9 @@ router.patch('/admin/:id', isAdmin, bookingController.updateBooking);
 router.delete('/:id', canManageBookings, bookingController.deleteBooking);
 // Admin alias delete path (some legacy frontend calls may use /admin/:id with DELETE)
 router.delete('/admin/:id', isAdmin, bookingController.deleteBooking);
+// Per-service operations
+router.patch('/admin/:bookingId/service/:serviceId/status', isAdmin, bookingController.updateServiceStatus);
+router.delete('/admin/:bookingId/service/:serviceId', isAdmin, bookingController.deleteServiceFromBooking);
 
 module.exports = router;
 
