@@ -2,6 +2,16 @@
 
 A comprehensive Node.js backend API for spa booking and management systems, designed to support both Flutter mobile applications and web applications (MERN stack).
 
+
+> **Portfolio context:** This repository is the shared backend of a multi-role SPA Management platform with separate customer, employee, and admin applications. It is part of a team-delivered project; the backend repository documents the API component rather than claiming sole ownership of every application.
+>
+> **Verification note:** The repository contains code for Stripe and Network International payment integrations, gift cards, and attendance-related functionality. Full production readiness, payment-provider approval, and end-to-end behavior have not been independently verified.
+
+## Related application
+
+- [Employee dashboard (React/Vite)](https://github.com/Muhammedsajid10/EmployeeSideSpa)
+- Customer booking frontend and admin frontend: maintained in separate project repositories
+
 ## Table of Contents
 
 - [Features](#features)
